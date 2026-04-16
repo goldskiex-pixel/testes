@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: oitchau_setup
+    ports: ["5432:5432"]
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/oitchau_setup
+      PORT: 4000
+    ports: ["4000:4000"]
+    depends_on: [postgres]
+
+  frontend:
+    build: ./frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:4000/api
+    ports: ["3000:3000"]
+    depends_on: [backend]
+
+volumes:
+  pg_data:

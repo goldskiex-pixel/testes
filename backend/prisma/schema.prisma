@@ -1,0 +1,195 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleType {
+  ADMIN
+  OPERATOR
+}
+
+enum EnvironmentType {
+  STAGING
+  PRODUCTION
+}
+
+enum RunStatus {
+  UPLOADED
+  VALIDATED
+  READY
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum RecordStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+enum Severity {
+  ERROR
+  WARNING
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  roleId       String
+  role         Role     @relation(fields: [roleId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  uploads      Upload[]
+}
+
+model Role {
+  id    String   @id @default(cuid())
+  type  RoleType @unique
+  users User[]
+}
+
+model Client {
+  id               String           @id @default(cuid())
+  name             String
+  environmentType  EnvironmentType
+  apiBaseUrl       String
+  isActive         Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  credentials      ClientCredential?
+  uploads          Upload[]
+  setupRuns        SetupRun[]
+
+  @@index([environmentType, isActive])
+}
+
+model ClientCredential {
+  id             String   @id @default(cuid())
+  clientId       String   @unique
+  client         Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  apiKeyMasked   String
+  secretCipher   String
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Upload {
+  id             String   @id @default(cuid())
+  clientId       String
+  client         Client   @relation(fields: [clientId], references: [id])
+  uploadedById   String
+  uploadedBy     User     @relation(fields: [uploadedById], references: [id])
+  originalName   String
+  storagePath    String
+  mimeType       String
+  sizeBytes      Int
+  createdAt      DateTime @default(now())
+  setupRun       SetupRun?
+
+  @@index([clientId, createdAt])
+}
+
+model SetupRun {
+  id                String            @id @default(cuid())
+  clientId          String
+  client            Client            @relation(fields: [clientId], references: [id])
+  uploadId          String            @unique
+  upload            Upload            @relation(fields: [uploadId], references: [id])
+  status            RunStatus         @default(UPLOADED)
+  dryRun            Boolean           @default(false)
+  summary           Json?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  entities          SetupRunEntity[]
+  records           SetupRunRecord[]
+  validationIssues  ValidationIssue[]
+  logs              ExecutionLog[]
+  retryAttempts     RetryAttempt[]
+
+  @@index([clientId, status, createdAt])
+}
+
+model SetupRunEntity {
+  id          String   @id @default(cuid())
+  runId       String
+  run         SetupRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  entityName  String
+  total       Int      @default(0)
+  success     Int      @default(0)
+  failed      Int      @default(0)
+  pending     Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([runId, entityName])
+}
+
+model SetupRunRecord {
+  id             String       @id @default(cuid())
+  runId           String
+  run             SetupRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  entityName      String
+  rowNumber       Int
+  externalKey     String?
+  payload         Json?
+  transformed     Json?
+  status          RecordStatus @default(PENDING)
+  errorMessage    String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  validationIssues ValidationIssue[]
+
+  @@index([runId, entityName, status])
+}
+
+model ValidationIssue {
+  id          String   @id @default(cuid())
+  runId       String
+  run         SetupRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  recordId    String?
+  record      SetupRunRecord? @relation(fields: [recordId], references: [id])
+  entityName  String
+  tabName     String
+  rowNumber   Int?
+  fieldName   String?
+  message     String
+  severity    Severity
+  code        String?
+  createdAt   DateTime @default(now())
+
+  @@index([runId, entityName, severity])
+}
+
+model ExecutionLog {
+  id          String   @id @default(cuid())
+  runId       String
+  run         SetupRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  entityName  String?
+  recordId    String?
+  level       String
+  message     String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([runId, level, createdAt])
+}
+
+model RetryAttempt {
+  id            String   @id @default(cuid())
+  runId         String
+  run           SetupRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  requestedById String
+  requestedAt   DateTime @default(now())
+  recordIds     String[]
+  outcome       Json?
+
+  @@index([runId, requestedAt])
+}
